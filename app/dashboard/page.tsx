@@ -28,6 +28,9 @@ type Song = {
   artist: string;
   genre: string;
   played: boolean;
+  lyrics: string | null;
+  chords: string | null;
+  now_playing: boolean;
 };
 
 type BacklogSong = {
@@ -85,6 +88,12 @@ export default function Dashboard() {
   const [backlogForm, setBacklogForm] = useState({ title: '', artist: '', genre: '', notes: '', status: 'requested' as BacklogSong['status'] });
   const [addingBacklog, setAddingBacklog] = useState(false);
   const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [nowPlaying, setNowPlaying] = useState<Song | null>(null);
+  const [npTab, setNpTab] = useState<'lyrics' | 'chords'>('lyrics');
+  const [expandedSongId, setExpandedSongId] = useState<number | null>(null);
+  const [editLyrics, setEditLyrics] = useState('');
+  const [editChords, setEditChords] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const prevRanks = useRef<Record<number, number>>({});
 
   async function fetchData() {
@@ -126,10 +135,14 @@ export default function Dashboard() {
     // Fetch full song catalog sorted by artist then title
     const { data: catalogData } = await supabase
       .from('songs')
-      .select('id, title, artist, genre, played')
+      .select('id, title, artist, genre, played, lyrics, chords, now_playing')
       .order('artist', { ascending: true });
 
-    if (catalogData) setCatalog(catalogData);
+    if (catalogData) {
+      setCatalog(catalogData as Song[]);
+      const np = (catalogData as Song[]).find(s => s.now_playing) ?? null;
+      setNowPlaying(np);
+    }
 
     // Fetch backlog
     const { data: backlogData } = await supabase
@@ -178,6 +191,31 @@ export default function Dashboard() {
     });
     await supabase.from('backlog').delete().eq('id', song.id);
     setPromotingId(null);
+    fetchData();
+  };
+
+  const setNowPlayingSong = async (song: Song) => {
+    await supabase.from('songs').update({ now_playing: false }).eq('now_playing', true);
+    await supabase.from('songs').update({ now_playing: true }).eq('id', song.id);
+    fetchData();
+  };
+
+  const clearNowPlaying = async () => {
+    await supabase.from('songs').update({ now_playing: false }).eq('now_playing', true);
+    fetchData();
+  };
+
+  const openEdit = (song: Song) => {
+    setExpandedSongId(song.id);
+    setEditLyrics(song.lyrics ?? '');
+    setEditChords(song.chords ?? '');
+  };
+
+  const saveEdit = async (songId: number) => {
+    setSavingEdit(true);
+    await supabase.from('songs').update({ lyrics: editLyrics || null, chords: editChords || null }).eq('id', songId);
+    setSavingEdit(false);
+    setExpandedSongId(null);
     fetchData();
   };
 
@@ -515,6 +553,47 @@ export default function Dashboard() {
           flex-shrink: 0;
         }
         .del-btn:hover { color: #dc2626; border-color: #dc262644; }
+
+        .np-card {
+          background: #0a0a00;
+          border: 1px solid #f59e0b33;
+          border-radius: 12px;
+          padding: 1rem 1.25rem;
+          margin-bottom: 1rem;
+        }
+        .np-tab-btn {
+          background: transparent;
+          border: none;
+          font-family: 'Barlow Condensed', sans-serif;
+          font-weight: 700;
+          font-size: 0.7rem;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          padding: 0.3rem 0.7rem;
+          cursor: pointer;
+          border-bottom: 2px solid transparent;
+          transition: color 0.15s, border-color 0.15s;
+          color: #444;
+        }
+        .np-tab-btn:hover { color: #888; }
+        .np-tab-btn.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+
+        .edit-textarea {
+          background: #0d0d0d;
+          border: 1px solid #1a1a1a;
+          border-radius: 6px;
+          color: #ccc;
+          font-family: 'Barlow', monospace;
+          font-size: 0.8rem;
+          padding: 0.5rem 0.75rem;
+          width: 100%;
+          outline: none;
+          resize: vertical;
+          line-height: 1.5;
+          transition: border-color 0.15s;
+        }
+        .edit-textarea:focus { border-color: #333; }
+        .edit-textarea::placeholder { color: #333; }
       `}</style>
 
       {/* ── Top bar ── */}
@@ -564,6 +643,66 @@ export default function Dashboard() {
           <div className="stat-label">Suggestions</div>
         </div>
       </div>
+
+      {/* ── Now Playing card ── */}
+      {nowPlaying && (
+        <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem' }}>
+          <div className="np-card">
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+              {/* Left: song info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.6rem', color: '#f59e0b', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span className="live-dot" style={{ background: '#f59e0b' }} /> Now Playing
+                </div>
+                <div style={{ fontSize: 'clamp(1.2rem, 3vw, 1.8rem)', fontWeight: 900, lineHeight: 1, color: '#fff', marginBottom: '0.2rem' }}>{nowPlaying.title}</div>
+                <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.85rem', color: '#666' }}>{nowPlaying.artist}</div>
+              </div>
+              {/* Right: clear button */}
+              <button
+                onClick={clearNowPlaying}
+                style={{
+                  background: 'transparent',
+                  color: '#444',
+                  border: '1px solid #222',
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                ✕ CLEAR
+              </button>
+            </div>
+
+            {/* Lyrics / Chords tabs */}
+            {(nowPlaying.lyrics || nowPlaying.chords) && (
+              <div style={{ marginTop: '0.85rem' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a', marginBottom: '0.75rem' }}>
+                  <button className={`np-tab-btn${npTab === 'lyrics' ? ' active' : ''}`} onClick={() => setNpTab('lyrics')}>Lyrics</button>
+                  <button className={`np-tab-btn${npTab === 'chords' ? ' active' : ''}`} onClick={() => setNpTab('chords')}>Chords</button>
+                </div>
+                {npTab === 'lyrics' && (
+                  <pre style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.85rem', color: '#aaa', whiteSpace: 'pre-wrap', maxHeight: '220px', overflowY: 'auto', lineHeight: 1.6, margin: 0 }}>
+                    {nowPlaying.lyrics ?? <span style={{ color: '#333', fontStyle: 'italic' }}>No lyrics saved.</span>}
+                  </pre>
+                )}
+                {npTab === 'chords' && (
+                  <pre style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#f59e0b', whiteSpace: 'pre-wrap', maxHeight: '220px', overflowY: 'auto', lineHeight: 1.8, margin: 0 }}>
+                    {nowPlaying.chords ?? <span style={{ color: '#333', fontFamily: 'Barlow, sans-serif', fontStyle: 'italic', fontSize: '0.85rem' }}>No chords saved.</span>}
+                  </pre>
+                )}
+              </div>
+            )}
+            {!nowPlaying.lyrics && !nowPlaying.chords && (
+              <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.75rem', color: '#333', marginTop: '0.6rem' }}>No lyrics or chords saved — add them in the Full Catalog tab.</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Admin controls ── */}
       <div style={{ maxWidth: '900px', margin: '0 auto 1rem', padding: '0 1.25rem' }}>
@@ -935,32 +1074,129 @@ export default function Dashboard() {
                   {filtered.map(song => {
                     const genreColor = GENRE_COLORS[song.genre] ?? '#888';
                     return (
-                      <div key={song.id} className={`catalog-row${song.played ? ' played' : ''}`}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
-                          <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.72rem', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.artist}</div>
+                      <div key={song.id}>
+                        <div className={`catalog-row${song.played ? ' played' : ''}`}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
+                            <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.72rem', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.artist}</div>
+                          </div>
+                          <span className="genre-chip" style={{ background: genreColor + '22', color: genreColor, flexShrink: 0 }}>{song.genre}</span>
+                          {/* Now playing button */}
+                          <button
+                            onClick={() => song.now_playing ? clearNowPlaying() : setNowPlayingSong(song)}
+                            title={song.now_playing ? 'Stop now playing' : 'Set as now playing'}
+                            style={{
+                              background: song.now_playing ? '#f59e0b22' : 'transparent',
+                              color: song.now_playing ? '#f59e0b' : '#444',
+                              border: `1px solid ${song.now_playing ? '#f59e0b44' : '#222'}`,
+                              fontFamily: 'Barlow Condensed, sans-serif',
+                              fontWeight: 700,
+                              fontSize: '0.7rem',
+                              padding: '0.2rem 0.45rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >▶</button>
+                          {/* Edit lyrics/chords */}
+                          <button
+                            onClick={() => expandedSongId === song.id ? setExpandedSongId(null) : openEdit(song)}
+                            style={{
+                              background: expandedSongId === song.id ? '#22222255' : 'transparent',
+                              color: (song.lyrics || song.chords) ? '#888' : '#333',
+                              border: '1px solid #222',
+                              fontFamily: 'Barlow Condensed, sans-serif',
+                              fontWeight: 700,
+                              fontSize: '0.65rem',
+                              letterSpacing: '0.06em',
+                              padding: '0.2rem 0.45rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >{expandedSongId === song.id ? '▲' : (song.lyrics || song.chords ? '✎' : '+ WORDS')}</button>
+                          <button
+                            className="played-btn"
+                            onClick={() => togglePlayed(song.id, song.played)}
+                            style={{
+                              background: song.played ? '#22c55e22' : 'transparent',
+                              color: song.played ? '#22c55e' : '#444',
+                              border: `1px solid ${song.played ? '#22c55e55' : '#222'}`,
+                              fontFamily: 'Barlow Condensed, sans-serif',
+                              fontWeight: 700,
+                              fontSize: '0.7rem',
+                              letterSpacing: '0.06em',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {song.played ? '✓ PLAYED' : 'PLAYED?'}
+                          </button>
                         </div>
-                        <span className="genre-chip" style={{ background: genreColor + '22', color: genreColor, flexShrink: 0 }}>{song.genre}</span>
-                        <button
-                          className="played-btn"
-                          onClick={() => togglePlayed(song.id, song.played)}
-                          style={{
-                            background: song.played ? '#22c55e22' : 'transparent',
-                            color: song.played ? '#22c55e' : '#444',
-                            border: `1px solid ${song.played ? '#22c55e55' : '#222'}`,
-                            fontFamily: 'Barlow Condensed, sans-serif',
-                            fontWeight: 700,
-                            fontSize: '0.7rem',
-                            letterSpacing: '0.06em',
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {song.played ? '✓ PLAYED' : 'PLAYED?'}
-                        </button>
+                        {/* Inline lyrics/chords editor */}
+                        {expandedSongId === song.id && (
+                          <div style={{ padding: '0.75rem 1rem', background: '#080808', borderBottom: '1px solid #111' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                              <div>
+                                <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.65rem', color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Lyrics</div>
+                                <textarea
+                                  className="edit-textarea"
+                                  rows={8}
+                                  placeholder="Paste lyrics here…"
+                                  value={editLyrics}
+                                  onChange={e => setEditLyrics(e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.65rem', color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Chords</div>
+                                <textarea
+                                  className="edit-textarea"
+                                  rows={8}
+                                  placeholder="e.g. | Am | F | C | G |"
+                                  value={editChords}
+                                  onChange={e => setEditChords(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                onClick={() => saveEdit(song.id)}
+                                disabled={savingEdit}
+                                style={{
+                                  background: '#f59e0b22',
+                                  color: '#f59e0b',
+                                  border: '1px solid #f59e0b44',
+                                  fontFamily: 'Barlow Condensed, sans-serif',
+                                  fontWeight: 700,
+                                  fontSize: '0.7rem',
+                                  letterSpacing: '0.06em',
+                                  padding: '0.3rem 0.85rem',
+                                  borderRadius: '4px',
+                                  cursor: savingEdit ? 'not-allowed' : 'pointer',
+                                  opacity: savingEdit ? 0.6 : 1,
+                                }}
+                              >{savingEdit ? 'SAVING…' : 'SAVE'}</button>
+                              <button
+                                onClick={() => setExpandedSongId(null)}
+                                style={{
+                                  background: 'transparent',
+                                  color: '#444',
+                                  border: '1px solid #222',
+                                  fontFamily: 'Barlow Condensed, sans-serif',
+                                  fontWeight: 700,
+                                  fontSize: '0.7rem',
+                                  letterSpacing: '0.06em',
+                                  padding: '0.3rem 0.65rem',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                }}
+                              >CANCEL</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1019,6 +1255,27 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
                           <span className="genre-chip" style={{ background: genreColor + '22', color: genreColor }}>{entry.genre}</span>
                           <span className={`vote-badge${isTop ? ' top' : ''}`}>{entry.count} {entry.count === 1 ? 'vote' : 'votes'}</span>
+                          <button
+                            onClick={() => {
+                              const song = catalog.find(s => s.id === entry.song_id);
+                              if (song) setNowPlayingSong(song);
+                            }}
+                            style={{
+                              background: nowPlaying?.id === entry.song_id ? '#f59e0b22' : 'transparent',
+                              color: nowPlaying?.id === entry.song_id ? '#f59e0b' : '#444',
+                              border: `1px solid ${nowPlaying?.id === entry.song_id ? '#f59e0b44' : '#222'}`,
+                              fontFamily: 'Barlow Condensed, sans-serif',
+                              fontWeight: 700,
+                              fontSize: '0.7rem',
+                              letterSpacing: '0.06em',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            ▶
+                          </button>
                           <button
                             className="played-btn"
                             onClick={() => togglePlayed(entry.song_id, entry.played)}
