@@ -1261,7 +1261,7 @@ export default function Dashboard() {
                               if (song) setNowPlayingSong(song);
                             }}
                             style={{
-                              background: nowPlaying?.song_id === entry.song_id || nowPlaying?.id === entry.song_id ? '#f59e0b22' : 'transparent',
+                              background: nowPlaying?.id === entry.song_id ? '#f59e0b22' : 'transparent',
                               color: nowPlaying?.id === entry.song_id ? '#f59e0b' : '#444',
                               border: `1px solid ${nowPlaying?.id === entry.song_id ? '#f59e0b44' : '#222'}`,
                               fontFamily: 'Barlow Condensed, sans-serif',
