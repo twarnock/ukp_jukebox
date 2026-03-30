@@ -30,6 +30,28 @@ type Song = {
   played: boolean;
 };
 
+type BacklogSong = {
+  id: string;
+  title: string;
+  artist: string;
+  genre: string;
+  notes: string | null;
+  status: 'requested' | 'learning' | 'ready';
+  created_at: string;
+};
+
+const BACKLOG_STATUSES = ['requested', 'learning', 'ready'] as const;
+const STATUS_LABELS: Record<string, string> = {
+  requested: 'Requested',
+  learning: 'Learning',
+  ready: 'Ready',
+};
+const STATUS_COLORS: Record<string, string> = {
+  requested: '#0369a1',
+  learning: '#a16207',
+  ready: '#15803d',
+};
+
 const GENRE_COLORS: Record<string, string> = {
   "Classic Rock": "#b45309",
   "80s Pop":      "#7c3aed",
@@ -57,8 +79,12 @@ export default function Dashboard() {
   const [totalRequests, setTotalRequests] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'catalog'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'catalog' | 'backlog'>('leaderboard');
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [backlog, setBacklog] = useState<BacklogSong[]>([]);
+  const [backlogForm, setBacklogForm] = useState({ title: '', artist: '', genre: '', notes: '', status: 'requested' as BacklogSong['status'] });
+  const [addingBacklog, setAddingBacklog] = useState(false);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
   const prevRanks = useRef<Record<number, number>>({});
 
   async function fetchData() {
@@ -105,9 +131,55 @@ export default function Dashboard() {
 
     if (catalogData) setCatalog(catalogData);
 
+    // Fetch backlog
+    const { data: backlogData } = await supabase
+      .from('backlog')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (backlogData) setBacklog(backlogData as BacklogSong[]);
+
     setLastUpdated(new Date());
     setLoading(false);
   }
+
+  const addBacklogSong = async () => {
+    if (!backlogForm.title.trim() || !backlogForm.artist.trim()) return;
+    setAddingBacklog(true);
+    await supabase.from('backlog').insert({
+      title: backlogForm.title.trim(),
+      artist: backlogForm.artist.trim(),
+      genre: backlogForm.genre.trim(),
+      notes: backlogForm.notes.trim() || null,
+      status: backlogForm.status,
+    });
+    setBacklogForm({ title: '', artist: '', genre: '', notes: '', status: 'requested' });
+    setAddingBacklog(false);
+    fetchData();
+  };
+
+  const updateBacklogStatus = async (id: string, status: BacklogSong['status']) => {
+    await supabase.from('backlog').update({ status }).eq('id', id);
+    fetchData();
+  };
+
+  const deleteBacklogSong = async (id: string) => {
+    await supabase.from('backlog').delete().eq('id', id);
+    fetchData();
+  };
+
+  const promoteToSetlist = async (song: BacklogSong) => {
+    setPromotingId(song.id);
+    await supabase.from('songs').insert({
+      title: song.title,
+      artist: song.artist,
+      genre: song.genre || 'Rock',
+      played: false,
+    });
+    await supabase.from('backlog').delete().eq('id', song.id);
+    setPromotingId(null);
+    fetchData();
+  };
 
   const [confirmClearPlayed, setConfirmClearPlayed] = useState(false);
   const [clearingPlayed, setClearingPlayed] = useState(false);
@@ -391,6 +463,58 @@ export default function Dashboard() {
         }
         .catalog-search:focus { border-color: #333; }
         .catalog-search::placeholder { color: #333; }
+
+        .backlog-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          padding: 0.8rem 1rem;
+          border-bottom: 1px solid #111;
+          transition: background 0.15s;
+        }
+        .backlog-row:hover { background: #0f0f0f; }
+
+        .backlog-input {
+          background: #111;
+          border: 1px solid #1a1a1a;
+          border-radius: 6px;
+          color: #ccc;
+          font-family: 'Barlow', sans-serif;
+          font-size: 0.85rem;
+          padding: 0.4rem 0.65rem;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .backlog-input:focus { border-color: #333; }
+        .backlog-input::placeholder { color: #333; }
+
+        .status-btn {
+          font-family: 'Barlow Condensed', sans-serif;
+          font-weight: 700;
+          font-size: 0.65rem;
+          letter-spacing: 0.08em;
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
+          cursor: pointer;
+          border: 1px solid transparent;
+          transition: all 0.15s;
+          white-space: nowrap;
+        }
+
+        .del-btn {
+          background: transparent;
+          color: #333;
+          border: 1px solid #1a1a1a;
+          font-family: 'Barlow Condensed', sans-serif;
+          font-weight: 700;
+          font-size: 0.65rem;
+          padding: 0.2rem 0.4rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.15s;
+          flex-shrink: 0;
+        }
+        .del-btn:hover { color: #dc2626; border-color: #dc262644; }
       `}</style>
 
       {/* ── Top bar ── */}
@@ -644,10 +768,147 @@ export default function Dashboard() {
       <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '0' }}>
         <button className={`tab-btn${activeTab === 'leaderboard' ? ' active' : ''}`} onClick={() => setActiveTab('leaderboard')}>Requests</button>
         <button className={`tab-btn${activeTab === 'catalog' ? ' active' : ''}`} onClick={() => setActiveTab('catalog')}>Full Catalog</button>
+        <button className={`tab-btn${activeTab === 'backlog' ? ' active' : ''}`} onClick={() => setActiveTab('backlog')}>Backlog {backlog.length > 0 && `(${backlog.length})`}</button>
       </div>
 
       {/* ── Main content ── */}
       <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem', display: activeTab === 'leaderboard' ? 'grid' : 'block', gridTemplateColumns: '1fr minmax(0, 320px)', gap: '1.25rem', alignItems: 'start' }}>
+
+        {/* ── Backlog tab ── */}
+        {activeTab === 'backlog' && (
+          <div style={{ paddingTop: '1rem' }}>
+
+            {/* Add form */}
+            <div style={{ background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1rem', marginBottom: '1rem' }}>
+              <div className="section-label" style={{ marginBottom: '0.85rem' }}>Add to Backlog</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input
+                  className="backlog-input"
+                  placeholder="Song title *"
+                  value={backlogForm.title}
+                  onChange={e => setBacklogForm(f => ({ ...f, title: e.target.value }))}
+                />
+                <input
+                  className="backlog-input"
+                  placeholder="Artist *"
+                  value={backlogForm.artist}
+                  onChange={e => setBacklogForm(f => ({ ...f, artist: e.target.value }))}
+                />
+                <input
+                  className="backlog-input"
+                  placeholder="Genre (optional)"
+                  value={backlogForm.genre}
+                  onChange={e => setBacklogForm(f => ({ ...f, genre: e.target.value }))}
+                />
+                <select
+                  className="backlog-input"
+                  value={backlogForm.status}
+                  onChange={e => setBacklogForm(f => ({ ...f, status: e.target.value as BacklogSong['status'] }))}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {BACKLOG_STATUSES.map(s => (
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <input
+                className="backlog-input"
+                placeholder="Notes (optional)"
+                value={backlogForm.notes}
+                onChange={e => setBacklogForm(f => ({ ...f, notes: e.target.value }))}
+                style={{ width: '100%', marginBottom: '0.5rem' }}
+              />
+              <button
+                onClick={addBacklogSong}
+                disabled={addingBacklog || !backlogForm.title.trim() || !backlogForm.artist.trim()}
+                style={{
+                  background: backlogForm.title.trim() && backlogForm.artist.trim() ? '#f59e0b22' : 'transparent',
+                  color: backlogForm.title.trim() && backlogForm.artist.trim() ? '#f59e0b' : '#333',
+                  border: `1px solid ${backlogForm.title.trim() && backlogForm.artist.trim() ? '#f59e0b44' : '#1a1a1a'}`,
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.35rem 1rem',
+                  borderRadius: '6px',
+                  cursor: addingBacklog || !backlogForm.title.trim() || !backlogForm.artist.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {addingBacklog ? 'ADDING…' : '+ ADD SONG'}
+              </button>
+            </div>
+
+            {/* Backlog list */}
+            {loading ? (
+              <div className="empty-state">Loading…</div>
+            ) : backlog.length === 0 ? (
+              <div className="empty-state">No songs in the backlog yet.</div>
+            ) : (
+              <div style={{ background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: '12px', overflow: 'hidden' }}>
+                {backlog.map(song => {
+                  const statusColor = STATUS_COLORS[song.status];
+                  const nextStatus = BACKLOG_STATUSES[BACKLOG_STATUSES.indexOf(song.status) + 1];
+                  const genreColor = GENRE_COLORS[song.genre] ?? '#888';
+                  return (
+                    <div key={song.id} className="backlog-row">
+                      {/* Status badge — click to advance */}
+                      <button
+                        className="status-btn"
+                        onClick={() => nextStatus && updateBacklogStatus(song.id, nextStatus)}
+                        title={nextStatus ? `Advance to ${STATUS_LABELS[nextStatus]}` : 'Ready — promote to setlist'}
+                        style={{
+                          background: statusColor + '22',
+                          color: statusColor,
+                          border: `1px solid ${statusColor}44`,
+                          cursor: nextStatus ? 'pointer' : 'default',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {STATUS_LABELS[song.status]}
+                      </button>
+
+                      {/* Song info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
+                        <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.72rem', color: '#555' }}>{song.artist}{song.notes && <span style={{ color: '#333', marginLeft: '0.5rem' }}>— {song.notes}</span>}</div>
+                      </div>
+
+                      {song.genre && (
+                        <span className="genre-chip" style={{ background: genreColor + '22', color: genreColor, flexShrink: 0 }}>{song.genre}</span>
+                      )}
+
+                      {/* Promote button (only when ready) */}
+                      {song.status === 'ready' && (
+                        <button
+                          onClick={() => promoteToSetlist(song)}
+                          disabled={promotingId === song.id}
+                          style={{
+                            background: '#22c55e22',
+                            color: '#22c55e',
+                            border: '1px solid #22c55e44',
+                            fontFamily: 'Barlow Condensed, sans-serif',
+                            fontWeight: 700,
+                            fontSize: '0.65rem',
+                            letterSpacing: '0.06em',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            cursor: promotingId === song.id ? 'not-allowed' : 'pointer',
+                            opacity: promotingId === song.id ? 0.6 : 1,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {promotingId === song.id ? '…' : '→ SETLIST'}
+                        </button>
+                      )}
+
+                      <button className="del-btn" onClick={() => deleteBacklogSong(song.id)}>✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Catalog tab ── */}
         {activeTab === 'catalog' && (() => {
