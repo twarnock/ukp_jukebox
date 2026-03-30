@@ -91,6 +91,8 @@ export default function Dashboard() {
 
   const [confirmClearPlayed, setConfirmClearPlayed] = useState(false);
   const [clearingPlayed, setClearingPlayed] = useState(false);
+  const [confirmClearRequests, setConfirmClearRequests] = useState(false);
+  const [clearingRequests, setClearingRequests] = useState(false);
 
   const togglePlayed = async (songId: number, currentPlayed: boolean) => {
     await supabase.from('songs').update({ played: !currentPlayed }).eq('id', songId);
@@ -102,6 +104,14 @@ export default function Dashboard() {
     await supabase.from('songs').update({ played: false }).eq('played', true);
     setConfirmClearPlayed(false);
     setClearingPlayed(false);
+    fetchData();
+  };
+
+  const clearRequests = async () => {
+    setClearingRequests(true);
+    await supabase.from('requests').delete().gte('id', 0);
+    setConfirmClearRequests(false);
+    setClearingRequests(false);
     fetchData();
   };
 
@@ -425,6 +435,67 @@ export default function Dashboard() {
               }}
             >
               CLEAR PLAYED
+            </button>
+          )}
+          <div style={{ width: '1px', height: '1rem', background: '#222' }} />
+          {confirmClearRequests ? (
+            <>
+              <span style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.75rem', color: '#f59e0b' }}>Clear all request votes?</span>
+              <button
+                onClick={clearRequests}
+                disabled={clearingRequests}
+                style={{
+                  background: '#dc262622',
+                  color: '#dc2626',
+                  border: '1px solid #dc262644',
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  cursor: clearingRequests ? 'not-allowed' : 'pointer',
+                  opacity: clearingRequests ? 0.6 : 1,
+                }}
+              >
+                {clearingRequests ? 'CLEARING…' : 'YES, CLEAR'}
+              </button>
+              <button
+                onClick={() => setConfirmClearRequests(false)}
+                style={{
+                  background: 'transparent',
+                  color: '#444',
+                  border: '1px solid #222',
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+            </>
+          ) : (
+            <button
+              className="admin-btn"
+              onClick={() => setConfirmClearRequests(true)}
+              style={{
+                background: 'transparent',
+                color: '#555',
+                border: '1px solid #222',
+                fontFamily: 'Barlow Condensed, sans-serif',
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                letterSpacing: '0.06em',
+                padding: '0.25rem 0.65rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              CLEAR REQUESTS
             </button>
           )}
         </div>
