@@ -89,8 +89,19 @@ export default function Dashboard() {
     setLoading(false);
   }
 
+  const [confirmClearPlayed, setConfirmClearPlayed] = useState(false);
+  const [clearingPlayed, setClearingPlayed] = useState(false);
+
   const togglePlayed = async (songId: number, currentPlayed: boolean) => {
     await supabase.from('songs').update({ played: !currentPlayed }).eq('id', songId);
+    fetchData();
+  };
+
+  const clearPlayed = async () => {
+    setClearingPlayed(true);
+    await supabase.from('songs').update({ played: false }).eq('played', true);
+    setConfirmClearPlayed(false);
+    setClearingPlayed(false);
     fetchData();
   };
 
@@ -223,6 +234,9 @@ export default function Dashboard() {
         .played-btn { transition: all 0.15s; }
         .played-btn:hover { border-color: #22c55e55 !important; color: #22c55e !important; }
 
+        .admin-btn { transition: all 0.15s; }
+        .admin-btn:hover { border-color: #444 !important; color: #aaa !important; }
+
         .vote-badge {
           background: #1a1a1a;
           color: #f59e0b;
@@ -336,6 +350,83 @@ export default function Dashboard() {
         <div className="stat-box">
           <div className="stat-num">{suggestions.length}</div>
           <div className="stat-label">Suggestions</div>
+        </div>
+      </div>
+
+      {/* ── Admin controls ── */}
+      <div style={{ maxWidth: '900px', margin: '0 auto 1rem', padding: '0 1.25rem' }}>
+        <div style={{
+          background: '#0d0d0d',
+          border: '1px solid #1a1a00',
+          borderRadius: '10px',
+          padding: '0.75rem 1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+        }}>
+          <span style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.65rem', color: '#555', letterSpacing: '0.15em', textTransform: 'uppercase', flex: '0 0 auto' }}>Admin</span>
+          <div style={{ width: '1px', height: '1rem', background: '#222' }} />
+          {confirmClearPlayed ? (
+            <>
+              <span style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.75rem', color: '#f59e0b' }}>Clear all played marks?</span>
+              <button
+                onClick={clearPlayed}
+                disabled={clearingPlayed}
+                style={{
+                  background: '#dc262622',
+                  color: '#dc2626',
+                  border: '1px solid #dc262644',
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  cursor: clearingPlayed ? 'not-allowed' : 'pointer',
+                  opacity: clearingPlayed ? 0.6 : 1,
+                }}
+              >
+                {clearingPlayed ? 'CLEARING…' : 'YES, CLEAR'}
+              </button>
+              <button
+                onClick={() => setConfirmClearPlayed(false)}
+                style={{
+                  background: 'transparent',
+                  color: '#444',
+                  border: '1px solid #222',
+                  fontFamily: 'Barlow Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.06em',
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+            </>
+          ) : (
+            <button
+              className="admin-btn"
+              onClick={() => setConfirmClearPlayed(true)}
+              style={{
+                background: 'transparent',
+                color: '#555',
+                border: '1px solid #222',
+                fontFamily: 'Barlow Condensed, sans-serif',
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                letterSpacing: '0.06em',
+                padding: '0.25rem 0.65rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              CLEAR PLAYED
+            </button>
+          )}
         </div>
       </div>
 
