@@ -22,6 +22,14 @@ type Suggestion = {
   created_at: string;
 };
 
+type Song = {
+  id: number;
+  title: string;
+  artist: string;
+  genre: string;
+  played: boolean;
+};
+
 const GENRE_COLORS: Record<string, string> = {
   "Classic Rock": "#b45309",
   "80s Pop":      "#7c3aed",
@@ -45,9 +53,12 @@ const GENRE_COLORS: Record<string, string> = {
 export default function Dashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [catalog, setCatalog] = useState<Song[]>([]);
   const [totalRequests, setTotalRequests] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'catalog'>('leaderboard');
+  const [catalogSearch, setCatalogSearch] = useState('');
   const prevRanks = useRef<Record<number, number>>({});
 
   async function fetchData() {
@@ -85,6 +96,15 @@ export default function Dashboard() {
       .limit(20);
 
     if (sugData) setSuggestions(sugData);
+
+    // Fetch full song catalog sorted by artist then title
+    const { data: catalogData } = await supabase
+      .from('songs')
+      .select('id, title, artist, genre, played')
+      .order('artist', { ascending: true });
+
+    if (catalogData) setCatalog(catalogData);
+
     setLastUpdated(new Date());
     setLoading(false);
   }
@@ -327,6 +347,50 @@ export default function Dashboard() {
           padding: 3rem 1rem;
           font-size: 0.9rem;
         }
+
+        .tab-btn {
+          background: transparent;
+          border: none;
+          font-family: 'Barlow Condensed', sans-serif;
+          font-weight: 700;
+          font-size: 0.8rem;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          padding: 0.5rem 1rem;
+          cursor: pointer;
+          border-bottom: 2px solid transparent;
+          transition: color 0.15s, border-color 0.15s;
+          color: #444;
+        }
+        .tab-btn:hover { color: #888; }
+        .tab-btn.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+
+        .catalog-row {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.65rem 1rem;
+          border-bottom: 1px solid #111;
+          transition: background 0.15s, opacity 0.15s;
+        }
+        .catalog-row:hover { background: #0f0f0f; }
+        .catalog-row.played { opacity: 0.45; }
+        .catalog-row.played:hover { opacity: 0.7; }
+
+        .catalog-search {
+          background: #111;
+          border: 1px solid #1a1a1a;
+          border-radius: 6px;
+          color: #ccc;
+          font-family: 'Barlow', sans-serif;
+          font-size: 0.85rem;
+          padding: 0.45rem 0.75rem;
+          width: 100%;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .catalog-search:focus { border-color: #333; }
+        .catalog-search::placeholder { color: #333; }
       `}</style>
 
       {/* ── Top bar ── */}
@@ -358,7 +422,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Stats row ── */}
-      <div style={{ padding: '1rem 1.25rem', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ padding: '1rem 1.25rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', maxWidth: '900px', margin: '0 auto' }}>
         <div className="stat-box">
           <div className="stat-num">{totalRequests}</div>
           <div className="stat-label">Total Requests</div>
@@ -366,6 +430,10 @@ export default function Dashboard() {
         <div className="stat-box">
           <div className="stat-num">{leaderboard.length}</div>
           <div className="stat-label">Songs Requested</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-num">{catalog.filter(s => s.played).length}</div>
+          <div className="stat-label">Songs Played</div>
         </div>
         <div className="stat-box">
           <div className="stat-num">{suggestions.length}</div>
@@ -572,11 +640,77 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Tab nav ── */}
+      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '0' }}>
+        <button className={`tab-btn${activeTab === 'leaderboard' ? ' active' : ''}`} onClick={() => setActiveTab('leaderboard')}>Requests</button>
+        <button className={`tab-btn${activeTab === 'catalog' ? ' active' : ''}`} onClick={() => setActiveTab('catalog')}>Full Catalog</button>
+      </div>
+
       {/* ── Main content ── */}
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem', display: 'grid', gridTemplateColumns: '1fr minmax(0, 320px)', gap: '1.25rem', alignItems: 'start' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.25rem', display: activeTab === 'leaderboard' ? 'grid' : 'block', gridTemplateColumns: '1fr minmax(0, 320px)', gap: '1.25rem', alignItems: 'start' }}>
+
+        {/* ── Catalog tab ── */}
+        {activeTab === 'catalog' && (() => {
+          const q = catalogSearch.toLowerCase();
+          const filtered = catalog.filter(s =>
+            s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
+          );
+          return (
+            <div style={{ paddingTop: '1rem' }}>
+              <div style={{ marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="section-label" style={{ whiteSpace: 'nowrap' }}>Song Catalog</div>
+                <input
+                  className="catalog-search"
+                  placeholder="Search title or artist…"
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                />
+                <span style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.7rem', color: '#333', whiteSpace: 'nowrap' }}>{filtered.length} / {catalog.length}</span>
+              </div>
+              {loading ? (
+                <div className="empty-state">Loading…</div>
+              ) : (
+                <div style={{ background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: '12px', overflow: 'hidden' }}>
+                  {filtered.map(song => {
+                    const genreColor = GENRE_COLORS[song.genre] ?? '#888';
+                    return (
+                      <div key={song.id} className={`catalog-row${song.played ? ' played' : ''}`}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
+                          <div style={{ fontFamily: 'Barlow, sans-serif', fontSize: '0.72rem', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.artist}</div>
+                        </div>
+                        <span className="genre-chip" style={{ background: genreColor + '22', color: genreColor, flexShrink: 0 }}>{song.genre}</span>
+                        <button
+                          className="played-btn"
+                          onClick={() => togglePlayed(song.id, song.played)}
+                          style={{
+                            background: song.played ? '#22c55e22' : 'transparent',
+                            color: song.played ? '#22c55e' : '#444',
+                            border: `1px solid ${song.played ? '#22c55e55' : '#222'}`,
+                            fontFamily: 'Barlow Condensed, sans-serif',
+                            fontWeight: 700,
+                            fontSize: '0.7rem',
+                            letterSpacing: '0.06em',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {song.played ? '✓ PLAYED' : 'PLAYED?'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Leaderboard ── */}
-        <div>
+        {activeTab === 'leaderboard' && <div>
           <div className="section-label" style={{ marginBottom: '0.85rem' }}>Song Requests</div>
 
           {loading ? (
@@ -654,10 +788,10 @@ export default function Dashboard() {
               })}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── Suggestions panel ── */}
-        <div>
+        {activeTab === 'leaderboard' && <div>
           <div className="section-label" style={{ marginBottom: '0.85rem' }}>Song Suggestions</div>
 
           {loading ? (
@@ -676,7 +810,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </main>
   );
